@@ -1,51 +1,59 @@
-# streamlit_app.py
 import streamlit as st
 import joblib
 import pandas as pd
 from pathlib import Path
 import os
 
-# —————————————————————————————————————————————
-# 1. Locate your model file relative to this script
-BASE_DIR = Path(__file__).resolve().parent
-MODEL_FILENAME = "travel_cost_predictor.pkl"
-MODEL_PATH = BASE_DIR / MODEL_FILENAME
+# ─── 1. Resolve paths ─────────────────────────────────────────────
+BASE_DIR      = Path(__file__).resolve().parent
+DATA_FILE     = BASE_DIR / "Travel_details_dataset.csv"
+MODEL_FILE    = BASE_DIR / "travel_cost_predictor.pkl"
 
-# 2. Debug info (optional—you can remove these later)
-st.write("Working directory:", os.getcwd())
-st.write("Looking for model at:", MODEL_PATH)
-st.write("Files here:", os.listdir(BASE_DIR))
-
-# 3. Load the model (stop if missing)
-if not MODEL_PATH.exists():
-    st.error(f"❌ Cannot find `{MODEL_FILENAME}` in {BASE_DIR}")
+# ─── 2. Load dataset ──────────────────────────────────────────────
+if not DATA_FILE.exists():
+    st.error(f"❌ Dataset not found at {DATA_FILE}")
     st.stop()
 
-model = joblib.load(MODEL_PATH)
+df = pd.read_csv(DATA_FILE)
+st.sidebar.success(f"Loaded dataset with {len(df):,} rows")
 
-# —————————————————————————————————————————————
-# 4. Build your UI
+# Use dataset to populate unique destinations
+if "Destination" not in df.columns:
+    st.error("❌ ‘Destination’ column not found in dataset")
+    st.stop()
+destinations = sorted(df["Destination"].dropna().unique())
+
+# ─── 3. Load model ─────────────────────────────────────────────────
+if not MODEL_FILE.exists():
+    st.error(f"❌ Model file not found at {MODEL_FILE}")
+    st.stop()
+
+model = joblib.load(MODEL_FILE)
+
+# ─── 4. App layout ──────────────────────────────────────────────────
 st.title("✈️ Travel Cost Predictor")
 
-# Example feature inputs — adjust these to match your training data!
-destination = st.selectbox("Destination", [
-    "London", "Phuket", "Bali", "New York", "Tokyo", "Paris",
-    "Sydney", "Dubai", "Bangkok"
-])
+with st.sidebar:
+    st.header("Inputs")
+    destination  = st.selectbox("Destination", destinations)
+    nights       = st.number_input("Number of nights",    1, 30, 3)
+    travelers    = st.number_input("Number of travelers", 1, 10, 1)
+    predict_btn  = st.button("Predict Costs")
 
-n_nights = st.number_input("Number of nights", min_value=1, max_value=30, value=3)
-num_travelers = st.number_input("Number of travelers", min_value=1, max_value=10, value=1)
-
-# 5. Predict button
-if st.button("Predict Cost"):
-    # Assemble into a DataFrame in the same format your model expects
+# ─── 5. Prediction logic ────────────────────────────────────────────
+if predict_btn:
     X = pd.DataFrame([{
         "Destination": destination,
-        "Nights": n_nights,
-        "NumTravelers": num_travelers
+        "Nights":      nights,
+        "NumTravelers": travelers
     }])
     try:
-        cost = model.predict(X)[0]
-        st.success(f"Estimated total cost: RM {cost:,.2f}")
+        accom_cost, transport_cost = model.predict(X)[0]
+        st.metric("🏨 Accommodation Cost", f"RM {accom_cost:,.2f}")
+        st.metric("🚌 Transport Cost",       f"RM {transport_cost:,.2f}")
     except Exception as e:
-        st.error(f"Error making prediction: {e}")
+        st.error(f"Prediction error: {e}")
+
+# ─── 6. (Optional) Data preview ─────────────────────────────────────
+with st.expander("View raw dataset"):
+    st.dataframe(df)
